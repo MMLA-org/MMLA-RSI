@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "Please cite the MMLA-RSI technical report when using this implementation."
+title: MMLA-RSI
+type: software
+authors:
+  - name: MMLA contributors
+license: AGPL-3.0
+version: 0.1.0
+repository-code: https://github.com/MMLA-org/MMLA-RSI
+identifiers:
+  - type: url
+    value: https://arxiv.org/abs/2610.20294v1
