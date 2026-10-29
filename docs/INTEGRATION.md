@@ -45,7 +45,9 @@ rank-4 CUDA forward/backward. Its FP32-factor/BF16-activation residual arithmeti
 matches `LearningResidual.inject`: cast the low-rank branch before adding
 the residual, and retain the corresponding cast in the input gradient. The
 CUDA implementation is first-order only. Compilation for sm89/90/100/103/120 plus compute100 PTX is complete;
-GPU numerical/performance qualification is pending. This RSI adapter continues
+[RTX 4090 numerical tests and operator timings](https://github.com/MMLA-org/MMLA-Kernels/blob/main/docs/results/larc4-rtx4090-20261029.md)
+are recorded; Hopper and Blackwell device checks remain pending. These
+operator timings do not measure RSI execution. This RSI adapter continues
 to use PyTorch and does not automatically dispatch to the experimental kernel.
 
 A future backend integration must retain per-role factor ownership, action
