@@ -23,6 +23,28 @@ class AdapterProfile:
             raise ValueError("generation must leave room for input")
 
 
+@dataclass(frozen=True)
+class SelectedHeadProfile(AdapterProfile):
+    """Explicit decoder/linear-head ABI; paths refer to supplied mixer modules.
+
+    The decoder must return last_hidden_state with all final normalization
+    already applied. The head is a plain torch.nn.Linear, with no additional
+    scaling or postprocessing. Models with different logits semantics use the
+    original full-logit profile. These fields enter the reader identity.
+    """
+    decoder_path: str = 'model'
+    head_path: str = 'lm_head'
+    projection_abi: str = 'decoder-linear-selected-v1'
+
+    def __post_init__(self):
+        super().__post_init__()
+        if (self.projection_abi!='decoder-linear-selected-v1'
+                or type(self.decoder_path) is not str or not self.decoder_path
+                or type(self.head_path) is not str or not self.head_path
+                or self.decoder_path==self.head_path):
+            raise ValueError('explicit decoder and linear-head paths required')
+
+
 class CausalLarcAdapter(nn.Module):
     """Wrap a supplied causal LM; memory is read through the explicit prompt."""
     def __init__(self, mixer, profile, *, seed, substrate_identity):
@@ -32,6 +54,11 @@ class CausalLarcAdapter(nn.Module):
         embeddings = mixer.get_input_embeddings().weight
         if embeddings.ndim != 2 or embeddings.shape[1] != profile.hidden_size:
             raise ValueError("profile and model hidden size disagree")
+        if isinstance(profile,SelectedHeadProfile):
+            decoder=mixer.get_submodule(profile.decoder_path)
+            head=mixer.get_submodule(profile.head_path)
+            if type(head) is not nn.Linear or head.in_features!=profile.hidden_size or decoder is mixer:
+                raise ValueError('registered hidden decoder and plain linear vocabulary head required')
         self.profile = profile
         self.substrate_identity = dict(substrate_identity)
         self.mixer = mixer.eval().requires_grad_(False)
@@ -58,6 +85,11 @@ class CausalLarcAdapter(nn.Module):
         embedded = self.mixer.get_input_embeddings()(input_ids).detach()
         z = self.rho.inject(embedded, None if fast_states is None else fast_states[0])
         positions = (attention_mask.long().cumsum(-1)-1).clamp_min(0)
+        if isinstance(self.profile,SelectedHeadProfile):
+            hidden=self.mixer.get_submodule(self.profile.decoder_path)(inputs_embeds=z,
+                attention_mask=attention_mask,position_ids=positions,use_cache=False,return_dict=True).last_hidden_state
+            if logit_positions is not None:hidden=hidden.index_select(1,logit_positions)
+            return self.mixer.get_submodule(self.profile.head_path)(hidden)
         logits = self.mixer(inputs_embeds=z, attention_mask=attention_mask,
                             position_ids=positions, use_cache=False, return_dict=True).logits
         return logits if logit_positions is None else logits[:, logit_positions, :]

@@ -105,3 +105,19 @@ host-enforced timeouts and process isolation for hard limits.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Code is licensed under **AGPL-3.0**;
 model and dataset licenses remain separate. See [LICENSE](LICENSE).
+
+### Project only the requested output positions
+
+The default `AdapterProfile` continues to call the supplied causal LM's full
+logits interface. For a decoder followed directly by a plain linear vocabulary
+head, opt in with `SelectedHeadProfile(hidden_size=..., decoder_path="model",
+head_path="lm_head")`. The decoder returns its fully normalized
+`last_hidden_state`; the adapter selects requested positions before applying
+the head. Full-prefix attention, masks, positions and input-LARC gradients stay
+active. No KV or evicted-memory cache is introduced.
+
+This explicit ABI is included in the profile and reader identity. Do not use it
+for a model that rescales or postprocesses logits outside the head; use the
+default adapter or implement that model's projection explicitly. CPU tests
+check logits, gradients, sampling probabilities and reader invalidation.
+GPU and end-to-end speed are workload dependent and are not claimed by these tests.
