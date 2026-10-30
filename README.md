@@ -33,6 +33,29 @@ PyTorch, NumPy and safetensors are the core dependencies. Transformers is needed
 only for the supplied HF example adapter tests and tiny demos. Model loading is
 explicit: importing this package does not download or run a model.
 
+## Load the Orbit model
+
+Orbit is the first official MMLA model release. Its Hugging Face repository contains
+weights, configuration, tokenizer files and results; this library supplies the
+matching runtime. Install the `orbit` extra on Python 3.11+:
+
+```sh
+python -m pip install --extra-index-url https://download.pytorch.org/whl/cu128 '.[orbit]'
+```
+
+```python
+from mmla_orbit import load_orbit
+model = load_orbit("/path/to/Orbit", device="cuda")
+```
+
+The loader verifies local weights and the pinned execution code. Importing
+`mmla_orbit` does not download or run a model. The runtime supports Frame, Stream,
+Joint, LARC state, authoritative memory and the finite RTMA recursive controller.
+See [loading and feedback](docs/orbit/USAGE.md), [architecture](docs/orbit/ARCHITECTURE.md)
+and [RSI deployment](docs/orbit/RSI_RUNTIME.md). Use a fresh Python process;
+installed generic `mmla_rsi` examples and the model-specific execution bundle are
+separate interfaces. Recorded task/RSI results belong to the model card.
+
 ## Start with the mechanisms
 
 ```sh

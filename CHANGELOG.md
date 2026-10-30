@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- Add the installable Orbit runtime and `mmla_orbit.load_orbit` API.
+- Separate model weights from execution code; verify their matching identities.
+- Preserve the trained roles, architecture and RTMA controller semantics.
+
 ## Unreleased — 2026-10-29
 
 - Document CUDA first-order integration and architecture-specific qualification; the RSI adapter remains on PyTorch.

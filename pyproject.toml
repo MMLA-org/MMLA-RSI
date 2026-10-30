@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mmla-rsi"
-version = "0.1.0"
+version = "0.2.0"
 description = "Bounded recursive adaptation through RTT and RTMA"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,6 +15,7 @@ classifiers = ["Operating System :: POSIX :: Linux", "Programming Language :: Py
 
 [project.optional-dependencies]
 examples = ["transformers>=4.51,<6"]
+orbit = ["torch==2.11.0+cu128", "transformers==5.12.1", "safetensors==0.8.0", "numpy==2.3.5", "tokenizers==0.22.2", "huggingface_hub==1.33.0"]
 
 [project.urls]
 Repository = "https://github.com/MMLA-org/MMLA-RSI"
@@ -22,3 +23,6 @@ Issues = "https://github.com/MMLA-org/MMLA-RSI/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"mmla_orbit._runtime" = ["runtime-manifest.json"]
