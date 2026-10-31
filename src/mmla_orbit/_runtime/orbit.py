@@ -190,7 +190,7 @@ class Orbit:
         return restore_rsi(self, directory, manifest_sha256=manifest_sha256)
 
     def new_proposal_process(self, *, process='trained-keep', generation=0,
-                             parent_symbols=None, on_work=None, on_event=None):
+                             parent_symbols=None, on_work=None, on_event=None, rng_seed=None):
         """Create one of the three matched four-attempt proposal processes.
 
         The supplied manager actually controls retained evaluation records.
@@ -208,7 +208,7 @@ class Orbit:
             expected_contract=self.memory0.contract)
         return EditProcess(self.original_proposal if process=='original-keep' else self.proposal,
             self.interface, parent, memory, control='frozen' if process=='trained-frozen' else 'keep',
-            seed=self.seed, phase='dev', round_index=generation,
+            seed=self.seed if rng_seed is None else rng_seed, phase='dev', round_index=generation,
             on_work=on_work if on_work is not None else lambda value: None,
             on_event=on_event if on_event is not None else lambda value: None,
             functional_probes=process!='trained-frozen')
@@ -218,16 +218,16 @@ class Orbit:
         from edit_checkpoint import save_edit_checkpoint
         if process.model is not self.proposal and process.model is not self.original_proposal:
             raise ValueError('process belongs to another loaded model')
-        if process.seed != self.seed or process.interface is not self.interface:
+        if process.interface is not self.interface:
             raise ValueError('process belongs to another proposal interface')
         return save_edit_checkpoint(process, directory, source_identity=self.source_identity)
 
     def restore_proposal(self, directory, *, manifest_sha256, process='trained-keep',
-                         generation=0, parent_symbols=None, on_work=None, on_event=None):
+                         generation=0, parent_symbols=None, on_work=None, on_event=None, rng_seed=None):
         """Restore between feedback and next proposal into a fresh owned process."""
         from edit_checkpoint import restore_edit_checkpoint
         fresh = self.new_proposal_process(process=process, generation=generation,
-            parent_symbols=parent_symbols, on_work=on_work, on_event=on_event)
+            parent_symbols=parent_symbols, on_work=on_work, on_event=on_event, rng_seed=rng_seed)
         return restore_edit_checkpoint(fresh, directory, source_identity=self.source_identity,
             manifest_sha256=manifest_sha256)
 
@@ -347,4 +347,13 @@ def load_orbit(directory, *, seed=None, device='cpu'):
                 tensors.update({name+'.'+k:v for k,v in saved.items()})
             if tensor_digest(tensors) != qualification['definition']['decoder']:
                 raise ValueError('original qualification decoder identity changed')
-        return Orbit(roles, tokenizer, config, package=manifest, qualification=qualification)
+        orbit=Orbit(roles, tokenizer, config, package=manifest, qualification=qualification)
+        if 'reader_calibration' in config:
+            from readout_calibration import apply_calibration
+            ref=config['reader_calibration']
+            if set(ref)!={'stem','training_source','course','steps'} or ref['stem']!='calibration/readout' or ref['steps']!=247:
+                raise ValueError('explicit complete readout calibration descriptor required')
+            applied=apply_calibration(orbit,root/ref['stem'],contract=ref['training_source'])
+            if applied['course']!=ref['course']:
+                raise ValueError('calibration course identity changed')
+        return orbit

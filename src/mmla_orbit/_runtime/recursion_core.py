@@ -1,8 +1,8 @@
 """Selected-model subset of the completed fixed-Phi controller.
 
 The evaluator, fixed-n acceptance and journal transitions are retained from the
-three-reader implementation. Only seed17 is a released model; historical
-three-reader results remain unchanged. No training or execution on import.
+three-reader implementation. The weight identity remains the selected model. Proposal RNG repetitions
+are explicit and never select another trained role bundle. No training or execution on import.
 """
 from dataclasses import asdict
 import copy
@@ -16,6 +16,16 @@ from fixed_phi_evaluation import evaluate_logical_block
 from paired_admission import checked_evaluation, paired_admission
 from support_readiness import ReadyBlock
 SEEDS = (17,)
+
+
+def checked_rng_seeds(values):
+    """Public run boundary: finite declared RNG repeats, with default17 fixed."""
+    result=tuple(values)
+    if (not result or result[0]!=17 or len(result)>3 or len(set(result))!=len(result)
+            or any(type(v) is not int or v not in (17,29,43) for v in result)):
+        raise ValueError('distinct proposal RNG seeds17/29/43, beginning with default17')
+    return result
+
 ATTEMPTS = 4
 GENERATIONS = 2
 
@@ -30,7 +40,7 @@ def read_rule(language, value):
 class FixedPhiEvaluator:
     """Bind candidate-specific task interfaces to one immutable actual model."""
     def __init__(self, baseline, *, pair_seed, open_episode, on_work, on_progress, task_backend=None):
-        if type(baseline) is not DemonstrationFactory or pair_seed not in SEEDS:
+        if type(baseline) is not DemonstrationFactory or type(pair_seed) is not int or pair_seed not in (17,29,43):
             raise ValueError('original corrected factory and fixed reader seed required')
         if not all(callable(f) for f in (open_episode,on_work,on_progress)):
             raise ValueError('registered episode and accounting functions required')
@@ -81,21 +91,22 @@ class RuleSuccession:
     the successor's subsequent functional participation. An interrupted live
     run is not resumed automatically by constructing a second owner.
     """
-    def __init__(self, language, initial, journal, *, contract):
-        if (set(initial)!=set(SEEDS) or type(journal) is not Journal or journal.has_evidence()
+    def __init__(self, language, initial, journal, *, contract, rng_seeds=SEEDS):
+        self.rng_seeds=checked_rng_seeds(rng_seeds)
+        if (set(initial)!=set(self.rng_seeds) or type(journal) is not Journal or journal.has_evidence()
                 or any(read_rule(language,wire(r))!=r for r in initial.values())):
             raise ValueError('the selected initial RTMA parent and a new finite journal required')
         _sha(contract)
         self.language,self.journal,self.contract=language,journal,contract
-        self.parents={str(s):wire(initial[s]) for s in SEEDS}
-        self.versions={str(s):0 for s in SEEDS};self.edges=[];self.uses=[];self.last_cut=None
+        self.parents={str(s):wire(initial[s]) for s in self.rng_seeds}
+        self.versions={str(s):0 for s in self.rng_seeds};self.edges=[];self.uses=[];self.last_cut=None
         self.cohorts=[];self.decisions=[]
         self.poisoned=False
         self._save()
 
     def state(self):
         return copy.deepcopy(dict(schema='orbit-fixed-phi-rule-succession-v1',contract=self.contract,
-            parents=self.parents,versions=self.versions,edges=self.edges,uses=self.uses,
+            parents=self.parents,versions=self.versions,edges=self.edges,uses=self.uses,rng_seeds=list(self.rng_seeds),
             cohorts=self.cohorts,decisions=self.decisions,
             poisoned=self.poisoned,automatic_restart=False))
 
@@ -110,7 +121,7 @@ class RuleSuccession:
             self.poisoned=True;raise
 
     def parent(self, seed):
-        if self.poisoned or seed not in SEEDS:raise ValueError('live exact rule owner required')
+        if self.poisoned or seed not in self.rng_seeds:raise ValueError('live exact rule owner required')
         return read_rule(self.language,self.parents[str(seed)])
 
 
@@ -161,7 +172,7 @@ class RuleSuccession:
                 and u['generation']==edge['generation']+1 and u['parent']==edge['child']
                 and u['functional'] and u['completed_attempts']==ATTEMPTS for u in self.uses)
         chains=[]
-        for seed in SEEDS:
+        for seed in self.rng_seeds:
             rows=[e for e in edges if e['seed']==seed]
             ok=(len(rows)==2 and rows[0]['generation']==0 and rows[1]['generation']==1
                 and rows[0]['child']==rows[1]['parent'] and rows[0]['successor_participation_observed'])

@@ -12,9 +12,29 @@ The release contains the selected task model and its two matched proposal roles.
 - `trained-frozen`: the same learned proposer, with new feedback excluded from proposal memory.
 - `original-keep`: the original proposer, with the same parent-managed feedback interface.
 
-Each process has four attempts. All three finish before any audit is requested. A candidate must meet the existing development-selection conditions. Only an accepted successor proceeds to the second generation. There are at most two generations; changing the model or increasing this schedule defines another experiment.
+Each process has four attempts. All three finish for every active RNG seed before any audit is requested. A candidate must meet the existing development-selection conditions. Only an accepted successor proceeds to the second generation. There are at most two generations; changing the model or increasing this schedule defines another experiment.
 
 Admission uses 1,024 complete paired tasks, a material increment of 0.02, and the original e-value threshold of 720 at alpha = 0.025/18. **720 is an e-value threshold, not a required number of successful tasks.** Unused comparison slots are not reassigned. Each invocation binds its own run, runtime, environment and development population; this does not authorize unlimited statistical retries.
+
+## Repeat deployment RNGs on the same weights
+
+`rng_seeds=(17,)` remains the default. Pass `(17, 29, 43)` to run three
+proposal RNG repetitions using the same task and proposal weights. Each has its
+own proposal memory, task memory, random tape and saved process directories.
+The three controls and four attempts apply to each repetition; the maximum
+remains two generations. Every active seed is locked before the shared audit
+block is requested. A stopped or rejected seed is retained in the results.
+
+The journal records the installed manager for each seed. `recovered.manager`
+always returns seed 17; it does not choose the best observed seed. The other
+installed managers are available through `recovered.registry.parent(seed)`.
+For a quiet proposal checkpoint created with `rng_seed=29`, use the same explicit
+value in `restore_proposal`; it is independent of the training weight seed.
+
+Controller recovery binds the exact model and runtime. A legacy record without
+`rng_seeds` means `(17,)` within that same binding; this does not migrate records
+from a different runtime revision. Keep the package's pinned revision for old
+runs. CPU fixtures check state isolation and recovery, not scientific RSI gains.
 
 ## Connect a task host
 
@@ -56,6 +76,7 @@ result = model.run_rsi(
     on_event=work.event,
     resources_complete=accounting_boundary,
     task_backend=qualified_parallel_backend,
+    rng_seeds=(17, 29, 43),  # repeat inference; do not load three trained models
 )
 ```
 

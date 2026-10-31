@@ -9,7 +9,7 @@ from pathlib import Path
 
 from content_rules import identity
 from demonstration_factory import DemonstrationFactory
-from recursion_core import FixedPhiEvaluator, read_rule
+from recursion_core import FixedPhiEvaluator, read_rule, checked_rng_seeds
 from return_recursion import ReturnRoleFactory, ReturnSuccession, run_return_recursion
 from support_readiness import ReadyBlock
 from logical_public_rule import evaluate_public_rule
@@ -35,7 +35,7 @@ def model_binding(orbit):
 
 
 def run_rsi(orbit, *, directory, run_identity, environment_identity, dev, open_episode,
-            prepare_audit, on_work, on_event, resources_complete, task_backend=None):
+            prepare_audit, on_work, on_event, resources_complete, task_backend=None, rng_seeds=(17,)):
     """Run a new finite deployment, without retraining or weakening admission.
 
     dev is the complete sealed 32-world block. open_episode opens the matching
@@ -51,6 +51,7 @@ def run_rsi(orbit, *, directory, run_identity, environment_identity, dev, open_e
     callback is not a sandbox or an independent authorization mechanism.
     """
     binding = model_binding(orbit)
+    rng_seeds=checked_rng_seeds(rng_seeds)
     for value in (run_identity, environment_identity):
         if type(value) is not str or len(value) != 64:
             raise ValueError('explicit run and environment identities required')
@@ -61,15 +62,16 @@ def run_rsi(orbit, *, directory, run_identity, environment_identity, dev, open_e
                                              on_event, resources_complete))):
         raise ValueError('sealed DEV and bound execution/accounting interfaces required')
     baseline = DemonstrationFactory(orbit.task, orbit)
-    evaluator = FixedPhiEvaluator(baseline, pair_seed=orbit.seed, open_episode=open_episode,
-        on_work=on_work, on_progress=on_event, task_backend=task_backend)
-    factory = ReturnRoleFactory(evaluator, orbit.proposal, orbit.original_proposal,
-        orbit.interface, orbit.memory0, on_work=on_work, on_event=on_event)
+    readers={s:FixedPhiEvaluator(baseline, pair_seed=s, open_episode=open_episode,
+        on_work=on_work, on_progress=on_event, task_backend=task_backend) for s in rng_seeds}
+    factories={s:ReturnRoleFactory(readers[s], orbit.proposal, orbit.original_proposal,
+        orbit.interface, orbit.memory0, on_work=on_work, on_event=on_event) for s in rng_seeds}
     definition = dict(schema='orbit-selected-rtma-execution-v1', model=binding,
         run_identity=run_identity, environment_identity=environment_identity,
         dev=dict(ready=dev.ready_sha256, seal=dev.seal_sha256, block=dev.block_sha256,
                  producer=dev.producer_sha256, population=dev.population_sha256),
-        attempts=4, generations=2,
+        attempts=4, generations=2, rng_seeds=list(rng_seeds), weight_seed=orbit.seed,
+        default_manager_rng=17, same_weight_repetitions=True,
         processes=['trained-keep', 'trained-frozen', 'original-keep'],
         admission=dict(n=1024, delta=.02, alpha=.025/18, evalue_threshold=720),
         numerical_deployment_updates=0, automatic_retry=False)
@@ -77,16 +79,17 @@ def run_rsi(orbit, *, directory, run_identity, environment_identity, dev, open_e
     root = Path(directory)
     root.mkdir(parents=True, exist_ok=False)
     save_artifact(root/'definition', definition, source=binding['runtime'], kind='rsi-definition')
-    journal = Journal(root/'registry', max_bytes=64*1024**2+4096, max_cuts=8,
+    cuts=2+2*(2*len(rng_seeds)+1)
+    journal = Journal(root/'registry', max_bytes=cuts*8*1024**2+4096, max_cuts=cuts,
                       max_cut_bytes=8*1024**2)
-    registry = ReturnSuccession(orbit.interface.language, {17:orbit.initial_manager},
-                               journal, contract=contract)
+    registry = ReturnSuccession(orbit.interface.language, {s:orbit.initial_manager for s in rng_seeds},
+                               journal, contract=contract,rng_seeds=rng_seeds)
     counts = {}
 
     def save_process(seed, generation, name, state):
-        key = (generation, name)
+        key = (seed, generation, name)
         index = counts.get(key, 0)
-        save_artifact(root/'processes'/str(generation)/name/str(index), state,
+        save_artifact(root/'processes'/str(seed)/str(generation)/name/str(index), state,
                       source=binding['runtime'], kind='rsi-process-state')
         counts[key] = index+1
 
@@ -98,16 +101,16 @@ def run_rsi(orbit, *, directory, run_identity, environment_identity, dev, open_e
     # Each publication is new. An interrupted call remains incomplete and this
     # same directory cannot be restarted through run_rsi.
     result = run_return_recursion(language=orbit.interface.language,
-        readers={17:evaluator}, initial_rules={17:orbit.initial_manager}, dev=dev,
-        registry=registry, role_factories={17:factory}, prepare_audit=prepare_audit,
+        readers=readers, initial_rules={s:orbit.initial_manager for s in rng_seeds}, dev=dev,
+        registry=registry, role_factories=factories, prepare_audit=prepare_audit,
         evaluate_strong_rule=lambda block:evaluate_public_rule(block, codec=baseline.codec,
             open_episode=open_episode, on_work=on_work, on_event=on_event),
         resources_complete=resources_complete, on_event=on_event,
         save_process=save_process, save_cohort=save_cohort)
     value = dict(schema='orbit-selected-rtma-closed-v1', definition=definition,
         contract=contract, result=result, registry=registry.state(), cut=registry.last_cut,
-        process_snapshots=[dict(generation=g, process=n, count=c)
-                           for (g,n),c in sorted(counts.items())])
+        process_snapshots=[dict(rng_seed=s, generation=g, process=n, count=c)
+                           for (s,g,n),c in sorted(counts.items())])
     receipt = save_artifact(root/'closed', value, source=binding['runtime'], kind='rsi-closed')
     return dict(result, controller_artifact=receipt)
 
@@ -149,14 +152,18 @@ def restore_rsi(orbit, directory, *, manifest_sha256):
             or value['result']['status'] != 'COMPLETE_FINITE_ALGORITHM'
             or value['result']['actual_native_completion'] is not True):
         raise ValueError('complete matching controller artifact required')
-    journal = Journal(root/'registry', max_bytes=64*1024**2+4096, max_cuts=8,
+    rng_seeds=checked_rng_seeds(value['definition'].get('rng_seeds',(17,)))
+    cuts=2+2*(2*len(rng_seeds)+1)
+    journal = Journal(root/'registry', max_bytes=cuts*8*1024**2+4096, max_cuts=cuts,
                       max_cut_bytes=8*1024**2)
     cut, state = journal.load_bound()
     if cut != value['cut'] or state != value['registry']:
         raise ValueError('closed record and installed rule journal differ')
     if (state['schema'] != 'orbit-process-credit-rule-succession-v1'
             or state['contract'] != value['contract'] or state['poisoned'] is not False
-            or set(state['parents']) != {'17'} or set(state['versions']) != {'17'}):
+            or set(state['parents']) != {str(s) for s in rng_seeds}
+            or set(state['versions']) != {str(s) for s in rng_seeds}
+            or tuple(state.get('rng_seeds',(17,))) != rng_seeds):
         raise ValueError('matching unpoisoned selected-model registry required')
     read_rule(orbit.interface.language, state['parents']['17'])
     # Bytes and computation identity have crossed their owning boundaries.
@@ -164,6 +171,7 @@ def restore_rsi(orbit, directory, *, manifest_sha256):
     registry = object.__new__(ReturnSuccession)
     registry.language, registry.journal = orbit.interface.language, journal
     registry.contract, registry.last_cut = value['contract'], cut
+    registry.rng_seeds=rng_seeds
     for key in ('parents', 'versions', 'edges', 'uses', 'cohorts', 'decisions', 'poisoned'):
         setattr(registry, key, state[key])
     if registry.summary() != value['result']['registry']:

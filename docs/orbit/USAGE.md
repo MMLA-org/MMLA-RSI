@@ -61,3 +61,17 @@ The model card identifies the selected weights and separates their results from 
 MMLA runtime code is AGPL-3.0. Preserve the original MiniCPM acknowledgment, base-model license and notices in the containing package.
 
 Role metadata version2 preserves the original training receipt identity and reports retained,segment,and cumulative work separately. Public retained bindings contain only source/content hashes;loading needs no private training directory. This metadata records continuation,not a new scientific qualification.
+
+## Shared readout calibration
+
+A model package may include `calibration/readout.json` and its safetensors
+payload. Its configuration names the completed training course, source and
+readout version. Loading first verifies the original three-role bundle and then
+applies the four shared input-memory readout tensors. The saved task, proposal
+and original-proposal residual initializations stay unchanged.
+
+The update is a model parameter artifact, not a runtime option to enable extra
+training. It has its own resulting role identities and does not transfer an old
+RSI acceptance or predictive-selector qualification. Packages without the field
+retain their original load path. Install the exact runtime revision declared by
+the package; old packages do not silently adopt a new implementation.

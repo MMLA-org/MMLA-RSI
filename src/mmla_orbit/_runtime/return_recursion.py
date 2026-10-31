@@ -93,8 +93,8 @@ def develop_return_process(process, evaluator, dev, *, generation, process_name,
         numerical_deployment_updates=0, full_archive_visible_to_proposer=False)
 
 
-def lock_return_cohort(generation, developments, *, language, parents, population):
-    if generation not in (0,1) or not parents or set(parents) != set(developments) or not set(parents) <= set(SEEDS):
+def lock_return_cohort(generation, developments, *, language, parents, population, rng_seeds=SEEDS):
+    if generation not in (0,1) or not parents or set(parents) != set(developments) or not set(parents) <= set(rng_seeds):
         raise ValueError('complete active generation required')
     locks, stops = [], []
     for seed in sorted(parents):
@@ -177,8 +177,8 @@ class ReturnSuccession(RuleSuccession):
             raise ValueError('one durable cohort per generation')
         if generation and {d['seed'] for d in self.decisions if d['generation']==generation-1} != {l['seed'] for l in self.cohorts[-1]['locks']}:
             raise ValueError('all preceding decisions must close first')
-        parents = {s:self.parent(s) for s in SEEDS if self.versions[str(s)] == generation}
-        cohort = lock_return_cohort(generation, developments, language=self.language, parents=parents, population=population)
+        parents = {s:self.parent(s) for s in self.rng_seeds if self.versions[str(s)] == generation}
+        cohort = lock_return_cohort(generation, developments, language=self.language, parents=parents, population=population, rng_seeds=self.rng_seeds)
         self.cohorts.append(cohort); self._save()
         return copy.deepcopy(cohort)
 
@@ -186,14 +186,18 @@ class ReturnSuccession(RuleSuccession):
 def run_return_recursion(*, language, readers, initial_rules, dev, registry, role_factories,
                          prepare_audit, evaluate_strong_rule, resources_complete,
                          on_event, save_process, save_cohort):
-    if (tuple(readers) != SEEDS or set(initial_rules) != set(SEEDS) or set(role_factories) != set(SEEDS)
+    seeds=registry.rng_seeds
+    if (tuple(readers) != seeds or set(initial_rules) != set(seeds) or set(role_factories) != set(seeds)
             or type(registry) is not ReturnSuccession or type(dev) is not ReadyBlock or dev.role != 'DEV'
             or len(dev.permits) != 32 or dev.candidate_lock_sha256 is not None
             or any(type(e) is not FixedPhiEvaluator or e.pair_seed != s for s,e in readers.items())
             or any(type(f) is not ReturnRoleFactory or f.evaluator is not readers[s] for s,f in role_factories.items())
-            or any(registry.parent(s) != initial_rules[s] for s in SEEDS)):
+            or any(registry.parent(s) != initial_rules[s] for s in seeds)):
         raise ValueError('the selected model and all three proposal controls are required')
-    seen = frozenset(p.semantic_sha256 for p in dev.permits); active=set(SEEDS); outcomes=[]
+    if (len({e.model_identity for e in readers.values()})!=1
+            or len({identity(f.identities) for f in role_factories.values()})!=1):
+        raise ValueError('RNG repetitions must use identical task and proposal weights')
+    seen = frozenset(p.semantic_sha256 for p in dev.permits); active=set(seeds); outcomes=[]
     strong_dev = evaluate_strong_rule(dev); check_public_rule(strong_dev,dev)
     coverage_rule = parse_rule(language,'rtma',('sub','x8','x9'))
     null_rule = parse_rule(language,'rtma',('c0',))

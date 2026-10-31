@@ -37,7 +37,8 @@ explicit: importing this package does not download or run a model.
 
 Orbit is the first official MMLA model release. Its Hugging Face repository contains
 weights, configuration, tokenizer files and results; this library supplies the
-matching runtime. Install the `orbit` extra on Python 3.11+:
+matching runtime. Install the exact runtime revision recorded in the model card
+and `orbit_config.json`; versioned model packages keep their original runtime binding. Install the `orbit` extra on Python 3.11+:
 
 ```sh
 python -m pip install --extra-index-url https://download.pytorch.org/whl/cu128 '.[orbit]'
