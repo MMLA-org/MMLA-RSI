@@ -75,3 +75,32 @@ training. It has its own resulting role identities and does not transfer an old
 RSI acceptance or predictive-selector qualification. Packages without the field
 retain their original load path. Install the exact runtime revision declared by
 the package; old packages do not silently adopt a new implementation.
+
+## Deploying a returned manager
+
+A release may include a small `deployment.json` record naming the manager
+returned by its declared RSI run. It is bound to the actual loaded task and
+proposal roles, the manager language, and the complete package manifest.
+The default is the prespecified RNG17 result, including its initial manager
+when that run accepted no successor. The model card reports all run outcomes.
+
+```python
+from pathlib import Path
+from mmla_orbit import load_orbit, load_manager
+
+root = Path("/path/to/model")
+model = load_orbit(root, device="cuda")  # use the arithmetic setup above
+manager = load_manager(model, root / "deployment.json")
+state = model.new_task_state(seed=17, tenant="local", rule=manager)
+```
+
+This call creates a fresh fixed-Phi task state using the saved trained rho and
+returned RTMA manager. It neither runs a new proposal nor changes the model's
+initial manager. `model.new_proposal_process(parent_symbols=manager.symbols)`
+can use the same program as a parent in a separately scoped run.
+
+The small public record contains the program and result identities. Complete
+controller recovery still uses `model.restore_rsi(...)` with the retained
+closed controller outside the weights package. `load_manager` checks the
+packaged program's identity; it does not independently reproduce the recorded
+admission or transfer a task benefit to a different environment.
