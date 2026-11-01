@@ -82,7 +82,8 @@ def consolidate(source, destination, *, runtime_revision):
         role_metadata={seed: json.loads((source / 'roles' / seed / 'ROLES.json').read_bytes())
                        for seed in config['roles']},
         public_runtime_identity=runtime_identity,
-        public_runtime_version='0.2.3', public_runtime_revision=runtime_revision,
+        runtime_package={**config['runtime_package'], 'version':'0.2.3',
+                         'revision':runtime_revision},
         storage_provenance={'source_manifest_sha256':file_sha(source / 'MANIFEST.json'),
                             'source_runtime_identity':json.loads((source / 'orbit_config.json').read_bytes())['public_runtime_identity'],
                             'conversion':'unchanged tensors; namespace-only consolidation'})

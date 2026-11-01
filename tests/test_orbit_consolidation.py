@@ -39,6 +39,7 @@ class ConsolidationTests(unittest.TestCase):
             (source / 'roles/17/ROLES.json').write_text('{"role_fixture":true}')
             config = dict(schema='mmla-orbit-process-credit-config-v1', roles={'17':{}},
                 public_runtime_identity=runtime_id, qualification={},
+                runtime_package={'name':'mmla-rsi', 'version':'0.2.2', 'revision':'0' * 40},
                 reader_calibration={'stem':'calibration/readout'})
             (source / 'orbit_config.json').write_text(json.dumps(config))
             (source / 'deployment.json').write_text(json.dumps({'model':{'runtime':runtime_id}}))
@@ -55,6 +56,8 @@ class ConsolidationTests(unittest.TestCase):
             self.assertTrue((destination / 'tokenizer_config.json').is_file())
             self.assertTrue((destination / 'licenses/UPSTREAM_README.md').is_file())
             configuration = json.loads((destination / 'config.json').read_text())
+            self.assertEqual(configuration['runtime_package']['revision'], '1' * 40)
+            self.assertEqual(configuration['runtime_package']['version'], '0.2.3')
             actual_base, actual_omega, actual_states = load_consolidated(destination, configuration)
             self.assertTrue(exact_equal(base, actual_base))
             self.assertTrue(exact_equal(omega, actual_omega))
