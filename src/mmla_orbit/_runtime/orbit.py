@@ -244,7 +244,8 @@ def load_orbit(directory, *, seed=None, device='cpu'):
     six-model release is a different artifact and keeps its own loader.
     """
     root, manifest = verify_package(directory)
-    config = json.loads((root / 'orbit_config.json').read_bytes())
+    consolidated = (root / 'config.json').is_file()
+    config = json.loads((root / ('config.json' if consolidated else 'orbit_config.json')).read_bytes())
     selected = config.get('selected_seed')
     if selected is not None and (type(selected) is not int or selected not in (17, 29, 43)
             or set(config['roles']) != {str(selected)}):
@@ -261,7 +262,8 @@ def load_orbit(directory, *, seed=None, device='cpu'):
                 raise ValueError('use the supplied runtime in a fresh process: ' + name)
     sys.path.insert(0, str(runtime))
     import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
+    from transformers.initialization import no_init_weights
     from safetensors.torch import load_file
     from mmla_pdsa.full.profile import ArchitectureProfile
     from mmla_pdsa.full.substrate_helpers import lora_linear, tensors_hash
@@ -269,7 +271,7 @@ def load_orbit(directory, *, seed=None, device='cpu'):
     from mmla_pdsa.full.extensions.successor_model import SuccessorMMLAModel
     from mmla_pdsa.full.extensions.rsi_binding import rebind
     from mmla_pdsa.full.outcome_dense_arithmetic import bind
-    from orbit_process_bundle import restore_role_bundle, COLLECTION
+    from orbit_process_bundle import restore_role_bundle, restore_role_states, COLLECTION
     if (config['schema'] != 'mmla-orbit-process-credit-config-v1'
             or config['collection'] != COLLECTION or config['deployment_Phi'] != 'fixed'
             or config['RSI_qualification_inherited'] is not False
@@ -281,14 +283,27 @@ def load_orbit(directory, *, seed=None, device='cpu'):
         raise ValueError('CPU or CUDA device required')
     devices = list(range(torch.cuda.device_count())) if target.type == 'cuda' or torch.cuda.is_initialized() else []
     with torch.random.fork_rng(devices=devices):
-        tokenizer = AutoTokenizer.from_pretrained(root / 'base', local_files_only=True, trust_remote_code=False)
-        mixer = AutoModelForCausalLM.from_pretrained(root / 'base', local_files_only=True,
-            trust_remote_code=False, dtype=torch.bfloat16, attn_implementation='eager')
+        if consolidated:
+            from consolidated_storage import load_consolidated
+            base, omega, stored = load_consolidated(root, config)
+            backbone_config = dict(config['backbone_config'])
+            model_type = backbone_config.pop('model_type')
+            backbone_config = AutoConfig.for_model(model_type, **backbone_config)
+            tokenizer = AutoTokenizer.from_pretrained(root, config=backbone_config,
+                local_files_only=True, trust_remote_code=False)
+            with no_init_weights():
+                mixer = AutoModelForCausalLM.from_config(backbone_config,
+                    dtype=torch.bfloat16, attn_implementation='eager')
+            mixer.load_state_dict(base, strict=True, assign=True)
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(root / 'base', local_files_only=True, trust_remote_code=False)
+            mixer = AutoModelForCausalLM.from_pretrained(root / 'base', local_files_only=True,
+                trust_remote_code=False, dtype=torch.bfloat16, attn_implementation='eager')
+            omega = load_file(str(root / 'omega.safetensors'), device='cpu')
         mixer = mixer.to(target).eval().requires_grad_(False)
         if tensors_hash(torch, dict(mixer.named_parameters())) != config['substrate']['theta0']:
             raise ValueError('original theta0 identity changed')
         mixer.config._name_or_path = config['original_mixer_name_or_path']
-        omega = load_file(str(root / 'omega.safetensors'), device='cpu')
         if tensors_hash(torch, omega) != config['substrate']['omega']:
             raise ValueError('always-on omega identity changed')
         recipe = config['omega_recipe']; actual = {}
@@ -319,9 +334,16 @@ def load_orbit(directory, *, seed=None, device='cpu'):
         # Validate the original arithmetic; the loader does not silently enable
         # reduced precision or select a replacement implementation.
         bind(prototype)
-        roles = restore_role_bundle(prototype, root / 'roles' / str(seed),
-            source_identity=config['source'], metadata_sha256=specification['metadata_sha256'],
-            original_training_identity=specification['original_training_identity'])
+        if consolidated:
+            roles = restore_role_states(prototype, config['role_metadata'][str(seed)],
+                {name: stored['roles.' + str(seed) + '.' + name]
+                 for name in ('task', 'proposal', 'original_proposal')},
+                source_identity=config['source'],
+                original_training_identity=specification['original_training_identity'])
+        else:
+            roles = restore_role_bundle(prototype, root / 'roles' / str(seed),
+                source_identity=config['source'], metadata_sha256=specification['metadata_sha256'],
+                original_training_identity=specification['original_training_identity'])
         if roles['seed'] != seed:
             raise ValueError('restored role seed differs from the explicit selection')
         qualification = None
@@ -329,7 +351,7 @@ def load_orbit(directory, *, seed=None, device='cpu'):
             from mmla_pdsa.full.safe_state import load_state
             from mmla_pdsa.full.profile import digest
             from mmla_pdsa.full.neural import tensor_digest
-            qualification = load_state(root / 'qualification')
+            qualification = stored['qualification'] if consolidated else load_state(root / 'qualification')
             reference = config['qualification']
             if (set(qualification) != {'schema','definition','identity','cache_capacity','rho','readout','hybrid'}
                     or qualification['schema'] != 2
@@ -349,11 +371,14 @@ def load_orbit(directory, *, seed=None, device='cpu'):
                 raise ValueError('original qualification decoder identity changed')
         orbit=Orbit(roles, tokenizer, config, package=manifest, qualification=qualification)
         if 'reader_calibration' in config:
-            from readout_calibration import apply_calibration
+            from readout_calibration import apply_calibration, apply_calibration_state
             ref=config['reader_calibration']
             if set(ref)!={'stem','training_source','course','steps'} or ref['stem']!='calibration/readout' or ref['steps']!=247:
                 raise ValueError('explicit complete readout calibration descriptor required')
-            applied=apply_calibration(orbit,root/ref['stem'],contract=ref['training_source'])
+            if consolidated:
+                applied=apply_calibration_state(orbit,stored['calibration.readout'],contract=ref['training_source'])
+            else:
+                applied=apply_calibration(orbit,root/ref['stem'],contract=ref['training_source'])
             if applied['course']!=ref['course']:
                 raise ValueError('calibration course identity changed')
         return orbit

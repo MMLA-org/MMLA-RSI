@@ -220,20 +220,43 @@ def export_role_bundle(original_pair, trained_pair, directory, *, source_identit
 
 def restore_role_bundle(prototype, directory, *, source_identity, metadata_sha256,
                         original_training_identity):
-    """Load complete role tensors using only the containing base/runtime package.
-
-    The caller pins ROLES.json through the reviewed package manifest. No old
-    private collection or original correction checkpoint is opened by this API.
-    """
-    for value in (source_identity, metadata_sha256, original_training_identity):
-        sha(value)
-    _closed(prototype)
-    before = identity(prototype)
+    """Read the original three-file-pair layout, retaining its byte checks."""
+    sha(metadata_sha256)
     root = Path(directory)
     if root.is_symlink() or not root.is_dir() or {p.name for p in root.iterdir()} != set(FILES) | {'ROLES.json'}:
         raise ValueError('exact complete role-bundle inventory required')
     p = root/'ROLES.json'
     meta = _decode(_verified_bytes(p, p.stat().st_size, metadata_sha256, 65536))
+    refs = prototype.new_state_dict()
+    cap = sum(v.numel()*v.element_size() for v in refs.values())
+    cap += sum(prototype.rho.initialization[k].numel()*prototype.rho.initialization[k].element_size() for k in ('a','b')) + 4*1024**2
+    if set(meta['files']) != set(FILES):
+        raise ValueError('complete role file inventory required')
+    raw = {}
+    for name, row in meta['files'].items():
+        if set(row) != {'bytes', 'sha256'}:
+            raise ValueError('complete role file identity required')
+        raw[name] = _verified_bytes(root/name, row['bytes'], row['sha256'], cap)
+    states = {}
+    for role in ROLES:
+        tree = _decode(raw[role+'.json'])
+        if set(tree) != {'schema', 'tree'} or tree['schema'] != SCHEMA:
+            raise ValueError('typed data-only role state required')
+        tensors = load(raw[role+'.safetensors']); used = set()
+        states[role] = decode(tree['tree'], tensors, used)
+        if used != set(tensors):
+            raise ValueError('unreferenced role tensor')
+    return restore_role_states(prototype, meta, states, source_identity=source_identity,
+        original_training_identity=original_training_identity)
+
+
+def restore_role_states(prototype, meta, states, *, source_identity,
+                        original_training_identity):
+    """Restore the same numerical roles from either verified storage format."""
+    for value in (source_identity, original_training_identity):
+        sha(value)
+    _closed(prototype)
+    before = identity(prototype)
     if (set(meta) != {'schema', 'collection', 'source', 'seed', 'objective', 'identities', 'files',
             'original_training_identity', 'training_summary', 'training_summary_identity',
             'deployment_Phi', 'restored_optimizer', 'RSI_qualification_inherited'}
@@ -248,22 +271,13 @@ def restore_role_bundle(prototype, directory, *, source_identity, metadata_sha25
         raise ValueError('source-bound three-role metadata required')
     checked_training(meta['training_summary'], source=source_identity, seed=meta['seed'])
     refs = prototype.new_state_dict()
-    cap = sum(v.numel()*v.element_size() for v in refs.values())
-    cap += sum(prototype.rho.initialization[k].numel()*prototype.rho.initialization[k].element_size() for k in ('a','b')) + 4*1024**2
-    raw = {}
-    for name, row in meta['files'].items():
-        if set(row) != {'bytes', 'sha256'}:
-            raise ValueError('complete role file identity required')
-        raw[name] = _verified_bytes(root/name, row['bytes'], row['sha256'], cap)
+    if set(states) != set(ROLES):
+        raise ValueError('complete three-role state required')
     models = {}
     for role in ROLES:
-        tree = _decode(raw[role+'.json'])
-        if set(tree) != {'schema', 'tree'} or tree['schema'] != SCHEMA:
-            raise ValueError('typed data-only role state required')
-        tensors = load(raw[role+'.safetensors']); used = set()
-        payload = decode(tree['tree'], tensors, used)
+        payload = states[role]
         model = isolated_model(prototype)
-        if (used != set(tensors) or set(payload) != {'schema','role','profile','substrate','modules','initialization','module_status'}
+        if (set(payload) != {'schema','role','profile','substrate','modules','initialization','module_status'}
                 or payload['schema'] != 'orbit-process-credit-public-role-v1' or payload['role'] != role
                 or payload['profile'] != asdict(model.profile) or payload['substrate'] != model.substrate_identity
                 or set(payload['modules']) != set(refs)):

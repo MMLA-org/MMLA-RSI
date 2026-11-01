@@ -32,6 +32,11 @@ def apply_calibration(orbit, stem, *, contract):
     Discard this fresh instance if restoration fails; no live state is rewound.
     """
     payload=load_state(Path(stem))
+    return apply_calibration_state(orbit, payload, contract=contract)
+
+
+def apply_calibration_state(orbit, payload, *, contract):
+    """Apply an already decoded state from either verified package format."""
     current={name:identity(getattr(orbit,name)) for name in ROLES}
     if (payload['schema']!='orbit-shared-readout-calibration-v1' or payload['contract']!=contract
             or payload['steps']!=247 or payload['training_seed']!=17

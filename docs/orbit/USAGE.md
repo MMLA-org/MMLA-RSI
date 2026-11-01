@@ -48,9 +48,19 @@ A supplied program is not certified by this loading API. Independent task evalua
 
 ## Package identity
 
-`MANIFEST.json` binds model-package files by relative path, size and SHA256. The installed runtime has its own `runtime-manifest.json`; its identity must match `orbit_config.json`. No Python source is loaded from the weights directory. `orbit_config.json` uses `mmla-orbit-process-credit-config-v1`; it binds the base/omega recipe, original profile and hybrid configuration, source and collection, exact proposal interface and initial manager, and its one `roles["17"]` entry. The entry pins its `ROLES.json` byte hash and original training-receipt identity. `roles/<seed>/` uses `orbit-process-credit-public-roles-v2` and retains the completed new course identity: 28 effective updates, 29 physical updates including the save/restore comparison, and 116 candidate gradient accumulations per seed. Actual numerical and resource counts come from the saved run.
+`MANIFEST.json` binds each package file by path, size and SHA256. The installed runtime identity must match `config.json`; no Python source is loaded from the weights directory. The consolidated layout places the tokenizer and generation files beside `config.json` and a single `model.safetensors`.
 
-The model card identifies the selected weights and separates their results from earlier internal checkpoints.
+The archive contains the mixer, always-on omega factors, task and two proposal roles, the independent qualification decoder, and shared readout calibration. Tensor namespaces keep these roles distinct. This is a lossless storage conversion: omega remains an active residual module, and qualification is never added to the task weights. Typed state trees and original role lineage are stored in `config.json`. The original file hashes describe provenance; the current manifest binds the new archive. Loading checks the actual original numerical identities before applying the saved shared calibration.
+
+The root model type is `mmla_orbit`. Use `mmla_orbit.load_orbit`, not a plain Llama loader: treating the archive as only a language-model backbone would omit MMLA state and memory components. Legacy packages remain readable with their own pinned runtime. They are not silently rebound to another runtime revision.
+
+To consolidate a verified legacy package into a fresh directory:
+
+```sh
+python -m mmla_orbit.consolidate /path/to/old /path/to/new --runtime-revision EXACT_COMMIT
+```
+
+The converter does not train, run RSI or overwrite the source. Check loaded role identities and deterministic output equivalence before publishing a converted package. Model-package provenance records the old manifest and runtime; the deployment rule keeps its programs and numerical role bindings with the new runtime identity.
 
 ## References and license
 
