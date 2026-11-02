@@ -6,4 +6,4 @@ from .updater import UpdateBounds
 from .generation import Controller, RunConfig
 from .journal import Journal
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"

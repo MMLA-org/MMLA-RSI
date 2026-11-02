@@ -145,3 +145,14 @@ for a model that rescales or postprocesses logits outside the head; use the
 default adapter or implement that model's projection explicitly. CPU tests
 check logits, gradients, sampling probabilities and reader invalidation.
 GPU and end-to-end speed are workload dependent and are not claimed by these tests.
+
+### Recompute decoder activations during learning
+
+`RecomputedDecoderProfile` opts the generic `CausalLarcAdapter` into
+non-reentrant whole-decoder activation recomputation, with the same explicit
+linear-head ABI as `SelectedHeadProfile`. Input LARC gradients, masks, positions
+and RNG are preserved; generation under `no_grad` stays eager. The supplied
+decoder must have no mutable forward state. This trades extra backward work for
+retained activations; it is not a guarantee of faster generation or lower peak
+memory for every decoder. Existing profiles and the pinned Orbit execution
+bundle are unchanged. See [integration](docs/INTEGRATION.md).

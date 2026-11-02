@@ -6,6 +6,7 @@ still propagates gradients to its input LARC. No weights are downloaded here.
 from dataclasses import dataclass
 import torch
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 from .neural import LearningResidual
 
 
@@ -43,6 +44,17 @@ class SelectedHeadProfile(AdapterProfile):
                 or type(self.head_path) is not str or not self.head_path
                 or self.decoder_path==self.head_path):
             raise ValueError('explicit decoder and linear-head paths required')
+
+
+@dataclass(frozen=True)
+class RecomputedDecoderProfile(SelectedHeadProfile):
+    """Opt-in whole-decoder activation recomputation; old profiles stay eager."""
+    activation_recompute_abi: str = 'nonreentrant-decoder-v1'
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.activation_recompute_abi != 'nonreentrant-decoder-v1':
+            raise ValueError('explicit non-reentrant decoder ABI required')
 
 
 class CausalLarcAdapter(nn.Module):
@@ -86,8 +98,13 @@ class CausalLarcAdapter(nn.Module):
         z = self.rho.inject(embedded, None if fast_states is None else fast_states[0])
         positions = (attention_mask.long().cumsum(-1)-1).clamp_min(0)
         if isinstance(self.profile,SelectedHeadProfile):
-            hidden=self.mixer.get_submodule(self.profile.decoder_path)(inputs_embeds=z,
-                attention_mask=attention_mask,position_ids=positions,use_cache=False,return_dict=True).last_hidden_state
+            decoder=self.mixer.get_submodule(self.profile.decoder_path)
+            def decode(value):
+                return decoder(inputs_embeds=value, attention_mask=attention_mask,
+                    position_ids=positions, use_cache=False, return_dict=True).last_hidden_state
+            hidden=(checkpoint(decode,z,use_reentrant=False,preserve_rng_state=True)
+                    if isinstance(self.profile,RecomputedDecoderProfile) and torch.is_grad_enabled()
+                    else decode(z))
             if logit_positions is not None:hidden=hidden.index_select(1,logit_positions)
             return self.mixer.get_submodule(self.profile.head_path)(hidden)
         logits = self.mixer(inputs_embeds=z, attention_mask=attention_mask,

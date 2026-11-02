@@ -62,3 +62,26 @@ tracks Ada (`sm89`), Hopper (`sm90`), B200/GB200 (`sm100`),
 B300/GB300 (`sm103`) and RTX PRO6000 (`sm120`)
 separately. Native compilation, generic PTX compatibility, numerical checks and
 end-to-end throughput are distinct evidence; qualify the actual deployment GPU.
+
+## Optional decoder activation recomputation
+
+```python
+from mmla_rsi.adapter import CausalLarcAdapter, RecomputedDecoderProfile
+profile = RecomputedDecoderProfile(hidden_size=hidden_size,
+    decoder_path="model", head_path="lm_head")
+adapter = CausalLarcAdapter(causal_lm, profile, seed=17,
+    substrate_identity={"revision": exact_revision})
+```
+
+This profile checkpoints the opaque decoder as one unit while retaining the
+selected-position linear head. It does not enable a model's training mode or
+KV cache, and does not change the pretrained weights. Non-reentrant replay
+supports input/fast-state gradients and preserves RNG. Decoder forwards must
+remain pure and parameters fixed until backward ends. The new profile enters
+the reader identity; bind a fresh reader when selecting it. Existing eager
+profiles and versioned Orbit packages retain their behavior.
+
+Measure full feedback/update/generation time and useful tokens, including
+recomputation and environment waits. UTL, power, and operator timings are
+separate from useful task throughput and MFU. Memory and latency improvements
+depend on the decoder and workload; CPU equivalence is not a device benchmark.

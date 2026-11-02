@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 — 2026-11-02
+
+- Add an explicit recomputed-decoder profile to the generic HF adapter.
+- Preserve frozen-input LARC gradients and the selected-head ABI; old profiles and the pinned Orbit bundle stay unchanged.
+- Test gradients, reader identity and inference bypass on tiny CPU models.
+
 ## 0.2.0
 
 - Add the installable Orbit runtime and `mmla_orbit.load_orbit` API.
